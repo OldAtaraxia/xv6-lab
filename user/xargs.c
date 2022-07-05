@@ -14,26 +14,19 @@ int main(int argc, char* argv[]) {
     for(int i = 1; i < argc; i++) {
         newargv[i - 1] = argv[i];
     }
+
+    // 开始读取标准输入的内容, 可能来自管道可能来自输入
     while(read(0, &c, sizeof(char)) != 0 ) {
         if(c == ' ' || c == '\n') {
             buf[idx++] = '\0';
             newargv[args] = malloc(sizeof(char) * strlen(buf));
             strcpy(newargv[args++], buf);
             idx = 0;
-            if(c == '\n') {
-                newargv[args++] = 0;
-                if(fork() == 0) {
-                    // printf("%s\n", newargv[0]);
-                    exec(newargv[0], newargv);
-                    exit(0);
-                }
-                wait((int *)0);           
-                args = argc - 1; //初始值了2333
-            }
         } else {
             buf[idx++] = c;
         }
-    } 
+    }
+
     if(args != argc - 1) {
         // 最后一行不为空
         newargv[args++] = 0;
