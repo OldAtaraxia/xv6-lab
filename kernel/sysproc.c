@@ -101,10 +101,10 @@ uint64
 sys_trace(void)
 {
     // 获得参数
-    int n;
-    if(argint(0, &n) < 0)
+    int mask;
+    if(argint(0, &mask) < 0)
         return -1;
-    //
-    printf("sys_trace(%d)\n", n);
+    // 将mask记录到Per-process state中
+    myproc() -> tmask = mask;
     return 0;
 }

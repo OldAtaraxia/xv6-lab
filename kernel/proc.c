@@ -305,6 +305,9 @@ fork(void)
 
   pid = np->pid;
 
+  // feat: Modify fork() to copy the trace mask from the parent to the child process
+  np->tmask = p->tmask;
+
   release(&np->lock);
 
   acquire(&wait_lock);
