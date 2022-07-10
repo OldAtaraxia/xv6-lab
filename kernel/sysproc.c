@@ -6,6 +6,7 @@
 #include "memlayout.h"
 #include "spinlock.h"
 #include "proc.h"
+#include "sysinfo.h"
 
 uint64
 sys_exit(void)
@@ -107,4 +108,22 @@ sys_trace(void)
     // 将mask记录到Per-process state中
     myproc() -> tmask = mask;
     return 0;
+}
+
+// sysinfo
+uint64
+sys_sysinfo(void)
+{
+  // 获得参数
+  struct sysinfo info;
+  uint64 addr;
+  struct proc *p = myproc();
+  if (argaddr(0, &addr) < 0)
+    return -1;
+  info.freemem = freemem();
+  info.nproc = procnum();
+  // copy the info back to user space
+  if(copyout(p->pagetable, addr, (char *)&info, sizeof(info)) < 0)
+    return -1;
+  return 0;
 }
