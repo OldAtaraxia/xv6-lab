@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="CLionExternalBuildManager">
+    <target id="58809f47-75ca-41d9-91da-fd7eb2ec58fe" name="qemu" defaultType="MAKE">
+      <configuration id="e0477952-a653-41ee-a894-6a1af5896155" name="qemu" toolchainName="WSL">
+        <build type="MAKE">
+          <make targetName="qemu" />
+        </build>
+        <clean type="MAKE">
+          <make targetName="clean" />
+        </clean>
+      </configuration>
+    </target>
+  </component>
+</project>
