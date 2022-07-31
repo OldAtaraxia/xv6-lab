@@ -469,3 +469,22 @@ vmprint(pagetable_t pagetable, uint64 depth)
   }
 }
 
+int pgacccess(pagetable_t pagetable, uint64 va)
+{
+  pte_t *pte;
+
+  if(va >= MAXVA)
+    return 0;
+
+  pte = walk(pagetable, va, 0);
+  if(pte == 0)
+    return 0;
+  if((*pte & PTE_V) == 0)
+    return 0;
+  if ((*pte & PTE_A) != 0) {
+    // 被访问过
+    *pte = *pte & (~PTE_A); // 把访问位复位
+    return 1;
+  }
+  return 0;
+}
