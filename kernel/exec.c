@@ -71,7 +71,7 @@ exec(char *path, char **argv)
   if((sz1 = uvmalloc(pagetable, sz, sz + 2*PGSIZE)) == 0)
     goto bad;
   sz = sz1;
-  uvmclear(pagetable, sz-2*PGSIZE);
+  uvmclear(pagetable, sz-2*PGSIZE); // guard页作为保护页, 其PTE应该无效化来阻止栈溢出
   sp = sz;
   stackbase = sp - PGSIZE;
 

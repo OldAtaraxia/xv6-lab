@@ -476,6 +476,7 @@ int pgacccess(pagetable_t pagetable, uint64 va)
   if(va >= MAXVA)
     return 0;
 
+  // 这里采用walk模拟mmu的行为, 并不是mmu进行了寻址, 所以得到的PTE_A可以直接用
   pte = walk(pagetable, va, 0);
   if(pte == 0)
     return 0;
