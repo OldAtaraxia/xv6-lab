@@ -70,6 +70,7 @@ sys_sleep(void)
     sleep(&ticks, &tickslock);
   }
   release(&tickslock);
+  backtrace(); // lab4.2 : 追踪调用链
   return 0;
 }
 

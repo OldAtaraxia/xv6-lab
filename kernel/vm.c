@@ -402,14 +402,15 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
 
   while(got_null == 0 && max > 0){
     va0 = PGROUNDDOWN(srcva);
-    pa0 = walkaddr(pagetable, va0);
+    pa0 = walkaddr(pagetable, va0); // 得到对应的物理地址
     if(pa0 == 0)
       return -1;
-    n = PGSIZE - (srcva - va0);
+    n = PGSIZE - (srcva - va0); // 到下一个PGSIZE倍数的位置
     if(n > max)
       n = max;
 
     char *p = (char *) (pa0 + (srcva - va0));
+    // 每次移动1byte, 判断是否是`\0`
     while(n > 0){
       if(*p == '\0'){
         *dst = '\0';

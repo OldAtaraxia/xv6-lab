@@ -132,3 +132,12 @@ printfinit(void)
   initlock(&pr.lock, "pr");
   pr.locking = 1;
 }
+
+// lab4.2: backtrace
+// 回溯每个栈帧, 打印return address
+void
+backtrace(void)
+{
+  uint64 *fp = (uint64 *)r_fp(); // stack frame pointer
+  
+}
