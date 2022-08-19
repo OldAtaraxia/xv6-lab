@@ -138,6 +138,12 @@ printfinit(void)
 void
 backtrace(void)
 {
-  uint64 *fp = (uint64 *)r_fp(); // stack frame pointer
-  
+  printf("backtrace:\n");
+  uint64 fp = r_fp(); // stack frame pointer, 帧指针, 与栈指针sp不同
+
+  while (fp != PGROUNDUP(fp)) { // 判断是否到达栈底
+    uint64 ra = *(uint64 *)(fp - 8); // return address
+    printf("%p\n", ra);
+    fp = *(uint64*)(fp - 16);
+  }
 }
