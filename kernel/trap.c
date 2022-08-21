@@ -77,8 +77,18 @@ usertrap(void)
     exit(-1);
 
   // give up the CPU if this is a timer interrupt.
-  if(which_dev == 2)
+  if(which_dev == 2){
+    // 将trapframe中的epc修改为处理程序
+    if(p->alarm_interval > 0) {
+      p->alarm_count++;
+      if(p->alarm_count >= p->alarm_interval) {
+        p->alarm_count = 0;
+        p->trapframe->epc = p->alarm_handler;
+      }
+    }
     yield();
+  }
+
 
   usertrapret();
 }
@@ -174,7 +184,7 @@ clockintr()
 // 1 if other device,
 // 0 if not recognized.
 int
-devintr()
+ devintr()
 {
   uint64 scause = r_scause();
 

@@ -119,6 +119,10 @@ allocproc(void)
 found:
   p->pid = allocpid();
   p->state = USED;
+  // lab4.3: 初始化alarm有关的字段
+  p->alarm_interval = 0;
+  p->alarm_handler = 0;
+  p->alarm_count = 0;
 
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
