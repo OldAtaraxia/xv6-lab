@@ -63,7 +63,6 @@ usertrap(void)
     // an interrupt will change sstatus &c registers,
     // so don't enable until done with those registers.
     intr_on();
-
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
@@ -81,8 +80,10 @@ usertrap(void)
     // 将trapframe中的epc修改为处理程序
     if(p->alarm_interval > 0) {
       p->alarm_count++;
-      if(p->alarm_count >= p->alarm_interval) {
+      if(p->alarm_count >= p->alarm_interval && !p->is_alarming) {
         p->alarm_count = 0;
+        p->is_alarming = 1;
+        memmove(p->oldtframe, p->trapframe, sizeof(struct trapframe)); // 保存整个trapframe
         p->trapframe->epc = p->alarm_handler;
       }
     }

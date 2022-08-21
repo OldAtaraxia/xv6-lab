@@ -108,6 +108,8 @@ struct proc {
 
   // for lab4.3
   int alarm_interval;          // 报警间隔的时钟周期
-  uint64 alarm_handler;     // 处理程序
+  uint64 alarm_handler;        // 处理程序
   int alarm_count;             // 两次报警间的ticks计数
+  struct trapframe *oldtframe; // 保存epc来恢复原来的执行流
+  int is_alarming;             // 标识当前是否正在执行handler
 };

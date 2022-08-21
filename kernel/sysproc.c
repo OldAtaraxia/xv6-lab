@@ -98,7 +98,7 @@ sys_uptime(void)
 }
 
 // for lab4.3
-//
+// 将interval和handler保存到trapframe中以便将控制流转移到
 uint64
 sys_sigalarm(void)
 {
@@ -112,13 +112,17 @@ sys_sigalarm(void)
   if (argaddr(1, &handler) < 0) {
     return -1;
   }
-  p -> alarm_interval = interval;
-  p -> alarm_handler = handler;
+  p->alarm_interval = interval;
+  p->alarm_handler = handler;
   return 0;
 }
 
+// 执行完这个调用后需要切换回正常的执行流
 uint64
 sys_sigreturn(void)
 {
+  struct proc *p = myproc();
+  p->is_alarming = 0; // handler执行完以后把is_alarming设置为0
+  memmove(p->trapframe, p->oldtframe, sizeof (struct trapframe));
   return 0;
 }
