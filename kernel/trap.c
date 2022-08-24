@@ -68,9 +68,28 @@ usertrap(void)
   } else if((which_dev = devintr()) != 0){
     // ok
   } else {
-    printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
-    printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
-    p->killed = 1;
+    // handle page fault
+    if (r_scause() == 15) {
+      uint64 va = r_stval(); //导致出错的虚拟地址
+      // 判断是否是对cow页的访问
+      if (va >= p->sz || !iscowpage(va, p->pagetable, 1)) {
+        p->killed = 1;
+      } else {
+        uint64 pa = walkaddr(p->pagetable, va); // 实际的物理地址
+        char* mem;
+        if ((mem = kalloc()) == 0) {
+          // 分配内存失败了
+          p->killed = 1;
+        }
+        memmove(mem, (char*)pa, PGSIZE);
+        remapcowpages(p->pagetable, va, pa);
+        kfree((void *)pa);
+      }
+    } else {
+      printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
+      printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
+      p->killed = 1;
+    }
   }
 
   if(p->killed)

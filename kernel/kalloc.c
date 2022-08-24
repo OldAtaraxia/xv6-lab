@@ -23,10 +23,15 @@ struct {
   struct run *freelist;
 } kmem;
 
+struct spinlock reflock; // 直接用一个全局的锁来保证引用计数吧
+int refcount[PHYSTOP / PGSIZE + 1];
+
 void
 kinit()
 {
   initlock(&kmem.lock, "kmem");
+  // lab5: 初始化引用计数使用的锁
+  initlock(&reflock, "ref");
   freerange(end, (void*)PHYSTOP);
 }
 
@@ -51,10 +56,16 @@ kfree(void *pa)
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
 
+  r = (struct run*)pa;
+
+
+  acquire(&reflock);
+  refcount[(uint64)r / PGSIZE]--;
+  release(&reflock);
+  if(refcount[(uint64)r / PGSIZE] > 0) return; // 只有在引用为0的时候kfree才会释放
+
   // Fill with junk to catch dangling refs.
   memset(pa, 1, PGSIZE);
-
-  r = (struct run*)pa;
 
   acquire(&kmem.lock);
   r->next = kmem.freelist;
@@ -76,7 +87,34 @@ kalloc(void)
     kmem.freelist = r->next;
   release(&kmem.lock);
 
-  if(r)
-    memset((char*)r, 5, PGSIZE); // fill with junk
+  if(r) {
+    memset((char *) r, 5, PGSIZE); // fill with junk
+    acquire(&reflock);
+    refcount[(uint64)r / PGSIZE] = 1; // 初始化引用计数为1
+    release((&reflock));
+  }
   return (void*)r;
 }
+
+// utils for cow pages
+// 返回对应page的引用计数
+uint64 getrcount(void* pa) {
+  acquire(&reflock);
+  uint64 res = refcount[(uint64)pa / PGSIZE];
+  release(&reflock);
+  return res;
+}
+
+// 引用计数+1
+void rincrease(void* pa) {
+  acquire(&reflock);
+  refcount[(uint64)pa / PGSIZE]++;
+  release(&reflock);
+}
+
+// 引用计数减一
+//void rdecrease(void* pa) {
+//  acquire(&reflock);
+//  ((struct run *)pa) -> rcount--;
+//  release(&reflock);
+//}
