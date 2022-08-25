@@ -61,8 +61,11 @@ kfree(void *pa)
 
   acquire(&reflock);
   refcount[(uint64)r / PGSIZE]--;
-  release(&reflock);
-  if(refcount[(uint64)r / PGSIZE] > 0) return; // 只有在引用为0的时候kfree才会释放
+  if(refcount[(uint64)r / PGSIZE] > 0) {
+    release(&reflock);
+    return; // 只有在引用为0的时候kfree才会释放
+  }
+
 
   // Fill with junk to catch dangling refs.
   memset(pa, 1, PGSIZE);
@@ -70,6 +73,7 @@ kfree(void *pa)
   acquire(&kmem.lock);
   r->next = kmem.freelist;
   kmem.freelist = r;
+  release(&reflock);
   release(&kmem.lock);
 }
 
@@ -107,14 +111,13 @@ uint64 getrcount(void* pa) {
 
 // 引用计数+1
 void rincrease(void* pa) {
+  // add error check
+  if ((long) pa > PHYSTOP || refcount[(uint64)pa / PGSIZE] < 1) {
+    return;
+  }
   acquire(&reflock);
   refcount[(uint64)pa / PGSIZE]++;
   release(&reflock);
 }
 
-// 引用计数减一
-//void rdecrease(void* pa) {
-//  acquire(&reflock);
-//  ((struct run *)pa) -> rcount--;
-//  release(&reflock);
-//}
+// 将物理页分配到

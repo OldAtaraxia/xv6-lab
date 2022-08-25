@@ -364,7 +364,8 @@ void remapcowpages(pagetable_t pagetable, uint64 va, uint64 pa) {
   va = PGROUNDDOWN(va);
   pa = PGROUNDDOWN(pa);
   pte_t *pte = walk(pagetable, va, 0);
-  *pte = PA2PTE(pa) | PTE_W | PTE_R | PTE_V;
+  *pte &= ~PTE_C;
+  *pte = PA2PTE(pa) | PTE_W | PTE_FLAGS(*pte); // 之前的flag位也需要继承
 }
 
 // Copy from kernel to user.
