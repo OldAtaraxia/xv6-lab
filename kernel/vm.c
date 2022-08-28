@@ -302,6 +302,7 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 {
   pte_t *pte;
   uint64 pa, i;
+  uint flags;
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
@@ -309,21 +310,20 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     if((*pte & PTE_V) == 0)
       panic("uvmcopy: page not present");
     pa = PTE2PA(*pte); // physical address
+    flags = PTE_FLAGS(*pte);
     // 修改父进程page table的权限位
-    *pte &= (~PTE_W); // 去掉写权限
-    *pte |= PTE_C; // 设置PTE_Cow
+    flags &= (~PTE_W); // 去掉写权限
+    flags |= PTE_C; // 设置PTE_Cow
+    *pte = PA2PTE(pa) | flags;
     // 引用计数++
     rincrease((void *)pa);
     // 将父进程的物理页映射到子进程
-    if (mappages(new, i, PGSIZE, pa, PTE_FLAGS(*pte)) != 0 ) {
-      goto err;
+    if (mappages(new, i, PGSIZE, pa, flags) != 0 ) {
+      uvmunmap(new, 0, i / PGSIZE, 1);
+      return -1;
     }
   }
   return 0;
-
- err:
-  uvmunmap(new, 0, i / PGSIZE, 1);
-  return -1;
 }
 
 // mark a PTE invalid for user access.
@@ -340,32 +340,48 @@ uvmclear(pagetable_t pagetable, uint64 va)
 }
 
 // lab5
-
 // 判断对应的page是否为cow page
 int iscowpage(uint64 va, pagetable_t pagetable, int log) {
+  if (va > MAXVA) return 0;
   pte_t* pte =  walk(pagetable, va, 0);
   if(log) {
     printf("*pte & PTE_C == %p\n", *pte  & PTE_C);
   }
-  return *pte & PTE_C;
+  return pte && (*pte & PTE_V) && (*pte & PTE_C);
 }
 
-// 将cow页变成普通页
-// 线程不安全
-void undocowpage(uint64 va, pagetable_t pagetable) {
-  uint64 va0 = PGROUNDDOWN(va);
-  pte_t* pte =  walk(pagetable, va0, 0);
-  *pte &= ~PTE_C;
-  *pte |= PTE_W;
-}
+// 检查是否是cow page, 是则申请新的内存并复制内容
+uint64 uvmcowalloc(uint64 va, pagetable_t pagetable) {
+  pte_t* pte =  walk(pagetable, va, 0);
+  uint64 pa = PTE2PA(*pte);
 
-// 将之前的cow page设置为可以写入的page
-void remapcowpages(pagetable_t pagetable, uint64 va, uint64 pa) {
-  va = PGROUNDDOWN(va);
-  pa = PGROUNDDOWN(pa);
-  pte_t *pte = walk(pagetable, va, 0);
-  *pte &= ~PTE_C;
-  *pte = PA2PTE(pa) | PTE_W | PTE_FLAGS(*pte); // 之前的flag位也需要继承
+  if ((uint64)pte == 0 || (*pte & PTE_V) == 0 || !(*pte & PTE_C)) {
+    // 根本不是cow页
+    return 0;
+  }
+
+  uint flags = PTE_FLAGS(*pte);
+  if (getrcount((void *)pa) == 1) {
+    // 只有一个进程引用当前页面
+    flags &= ~PTE_C;
+    flags |= PTE_W;
+    *pte = PA2PTE(pa) | flags;
+  } else {
+    // 多个进程引用当前页面, 需要分配新页面并复制内容
+    char* mem = kalloc();
+    if (mem == 0) {
+      // 分配内存失败了
+      printf("kalloc failed\n");
+      return 0;
+    }
+    memmove(mem, (char*)pa, PGSIZE);
+    flags &= ~PTE_C;
+    flags |= PTE_W;
+    *pte = PA2PTE(mem) | flags;
+    kfree((void *) PGROUNDDOWN(pa)); // 原引用计数--
+    pa = (uint64)mem;
+  }
+  return pa;
 }
 
 // Copy from kernel to user.
@@ -379,24 +395,19 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
     pa0 = walkaddr(pagetable, va0);
+
+    // lab5: 处理cow page
+    // 检查是否是cow page, 是则执行类似的处理逻辑
+    if (iscowpage(va0, pagetable, 0)) {
+      pa0 = uvmcowalloc(va0, pagetable);
+    }
+
+
     if(pa0 == 0)
       return -1;
     n = PGSIZE - (dstva - va0);
     if(n > len)
       n = len;
-
-    // lab5: 处理cow page
-    // 分配一个新的Page
-    if (iscowpage(va0, pagetable, 0)) {
-      uint64 mem;
-      if ((mem = (uint64) kalloc()) == 0) {
-        return -1;
-      }
-      memmove((void *) mem, (const void *) pa0, PGSIZE); // 将原Page的内容复制到新page
-      remapcowpages(pagetable, va0, mem); // 映射新Page到va0
-      kfree((void *)pa0); // 原地址引用量--
-      pa0 = mem; //pa0是刚才申请的新页地址
-    }
 
     memmove((void *)(pa0 + (dstva - va0)), src, n);
 

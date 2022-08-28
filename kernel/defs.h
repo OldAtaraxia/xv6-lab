@@ -66,6 +66,7 @@ void            kinit(void);
 void            rincrease(void*);
 void            rdecrease(void*);
 uint64          getrcount(void*);
+void*           cowalloc(void*);
 
 // log.c
 void            initlog(int, struct superblock*);
@@ -174,8 +175,7 @@ int             copyout(pagetable_t, uint64, char *, uint64);
 int             copyin(pagetable_t, char *, uint64, uint64);
 int             copyinstr(pagetable_t, char *, uint64, uint64);
 int             iscowpage(uint64, pagetable_t, int);
-void            undocowpage(uint64, pagetable_t);
-void            remapcowpages(pagetable_t, uint64, uint64);
+uint64             uvmcowalloc(uint64, pagetable_t);
 
 // plic.c
 void            plicinit(void);

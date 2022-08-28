@@ -40,8 +40,10 @@ freerange(void *pa_start, void *pa_end)
 {
   char *p;
   p = (char*)PGROUNDUP((uint64)pa_start);
-  for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE)
+  for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE) {
+    refcount[(uint64)p / PGSIZE] = 1;
     kfree(p);
+  }
 }
 
 // Free the page of physical memory pointed at by v,
@@ -58,23 +60,18 @@ kfree(void *pa)
 
   r = (struct run*)pa;
 
-
   acquire(&reflock);
   refcount[(uint64)r / PGSIZE]--;
-  if(refcount[(uint64)r / PGSIZE] > 0) {
-    release(&reflock);
-    return; // 只有在引用为0的时候kfree才会释放
+  if(refcount[(uint64)r / PGSIZE] <= 0) {
+    // Fill with junk to catch dangling refs.
+    memset(pa, 1, PGSIZE);
+    acquire(&kmem.lock);
+    r->next = kmem.freelist;
+    kmem.freelist = r;
+    refcount[(uint64)r / PGSIZE] = 0;
+    release(&kmem.lock);
   }
-
-
-  // Fill with junk to catch dangling refs.
-  memset(pa, 1, PGSIZE);
-
-  acquire(&kmem.lock);
-  r->next = kmem.freelist;
-  kmem.freelist = r;
   release(&reflock);
-  release(&kmem.lock);
 }
 
 // Allocate one 4096-byte page of physical memory.
@@ -93,9 +90,8 @@ kalloc(void)
 
   if(r) {
     memset((char *) r, 5, PGSIZE); // fill with junk
-    acquire(&reflock);
+    // 这里无需加锁
     refcount[(uint64)r / PGSIZE] = 1; // 初始化引用计数为1
-    release((&reflock));
   }
   return (void*)r;
 }
@@ -112,7 +108,7 @@ uint64 getrcount(void* pa) {
 // 引用计数+1
 void rincrease(void* pa) {
   // add error check
-  if ((long) pa > PHYSTOP || refcount[(uint64)pa / PGSIZE] < 1) {
+  if ((long) pa >= PHYSTOP || refcount[(uint64)pa / PGSIZE] < 1) {
     return;
   }
   acquire(&reflock);
@@ -120,4 +116,25 @@ void rincrease(void* pa) {
   release(&reflock);
 }
 
-// 将物理页分配到
+// 将cow页变为可写的页
+// 若引用数 == 1则直接返回原地址
+// 否则分配新内存页并把内容复制过去, 之后引用数--
+void *cowalloc(void *pa) {
+  acquire(&reflock);
+  if (refcount[(uint64)pa / PGSIZE] <= 1) { // 无需复制
+    release(&reflock);
+    return pa;
+  }
+  // 分配新内存页, 并将原页内容复制到新页
+  char* mem;
+  if ((mem = kalloc()) == 0) {
+    // 分配内存失败了
+    printf("kalloc failed\n");
+    release(&reflock);
+    return 0;
+  }
+  memmove(mem, (char*)pa, PGSIZE);
+  refcount[(uint64)pa / PGSIZE]--;
+  release(&reflock);
+  return (void*)mem;
+}

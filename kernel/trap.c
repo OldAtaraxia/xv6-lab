@@ -71,24 +71,9 @@ usertrap(void)
     // handle page fault
     if (r_scause() == 15) {
       uint64 va = r_stval(); //导致出错的虚拟地址
-      uint64 pa = walkaddr(p->pagetable, va); // 实际的物理地址
       // 判断是否是对cow页的访问
-      if (va >= p->sz || !iscowpage(va, p->pagetable, 0)) {
+      if (va >= p->sz || va < 0 || uvmcowalloc(va, p->pagetable) == 0) {
         p->killed = 1;
-      } else if (getrcount((void *) pa) == 1) {
-        // 当前page已经被该进程独占, 将pte设置为可写即可
-        undocowpage(va, p->pagetable);
-      } else {
-        char* mem;
-        if ((mem = kalloc()) == 0) {
-          // 分配内存失败了
-          printf("kalloc failed\n");
-          p->killed = 1;
-        } else {
-          memmove(mem, (char*)pa, PGSIZE);
-          remapcowpages(p->pagetable, va, pa);
-          kfree((void *)pa);
-        }
       }
     } else {
       printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
