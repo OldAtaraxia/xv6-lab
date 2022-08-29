@@ -47,8 +47,18 @@ sys_sbrk(void)
   if(argint(0, &n) < 0)
     return -1;
   addr = myproc()->sz;
-  if(growproc(n) < 0)
-    return -1;
+//  if(growproc(n) < 0)
+//    return -1;
+  // lazy page allocation
+  uint64 sz = myproc()->sz;
+  if(n > 0) sz += n;
+  else {
+    if (sz + n <= 0) return -1;
+    else {
+      sz = uvmdealloc(myproc()->pagetable, myproc()->sz, myproc()->sz + n);
+    }
+  }
+  myproc()->sz = sz;
   return addr;
 }
 

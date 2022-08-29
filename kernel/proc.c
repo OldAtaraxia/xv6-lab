@@ -654,3 +654,23 @@ procdump(void)
     printf("\n");
   }
 }
+
+// lazy page allocation
+int is_lazy_allocation(uint64 va) {
+  struct proc *p = myproc();
+  return va < p->sz && va > PGROUNDUP(p->trapframe->sp);
+}
+
+int lazy_allocation(uint64 va) {
+  struct proc *p = myproc();
+  char *mem = kalloc(); // 每次lazy allocation以一个页为单位进行分配
+  if (mem == 0) return 0;
+  else {
+    memset(mem, 0, PGSIZE);
+    if(mappages(p->pagetable, PGROUNDDOWN(va), PGSIZE, (uint64)mem, PTE_R | PTE_W | PTE_X | PTE_U) != 0) {
+      kfree(mem);
+      return 0;
+    }
+  }
+  return 1;
+}

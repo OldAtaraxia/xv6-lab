@@ -69,10 +69,24 @@ usertrap(void)
     // ok
   } else {
     // handle page fault
-    if (r_scause() == 15) {
+    if (r_scause() == 15 || r_scause() == 13) {
       uint64 va = r_stval(); //导致出错的虚拟地址
+      // lazy page allocation
+      if (va < p->sz && va > PGROUNDUP(p->trapframe->sp)) { // 判断是否是lazy page allication, 在栈的上方(堆上)并在当前进程空间内
+        char *mem = kalloc(); // 每次lazy allocation以一个页为单位进行分配
+        if (mem == 0) p->killed = 1;
+        else {
+          memset(mem, 0, PGSIZE);
+          if(mappages(p->pagetable, PGROUNDDOWN(va), PGSIZE, (uint64)mem, PTE_R | PTE_W | PTE_X | PTE_U) != 0) {
+            kfree(mem);
+            p->killed = 1;
+          }
+        }
+      }
+
+      // copy on write
       // 判断是否是对cow页的访问
-      if (va >= p->sz || va < 0 || uvmcowalloc(va, p->pagetable) == 0) {
+      if (r_scause() == 13 || va >= p->sz || va < 0 || uvmcowalloc(va, p->pagetable) == 0) {
         p->killed = 1;
       }
     } else {

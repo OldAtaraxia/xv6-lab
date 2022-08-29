@@ -115,26 +115,3 @@ void rincrease(void* pa) {
   refcount[(uint64)pa / PGSIZE]++;
   release(&reflock);
 }
-
-// 将cow页变为可写的页
-// 若引用数 == 1则直接返回原地址
-// 否则分配新内存页并把内容复制过去, 之后引用数--
-void *cowalloc(void *pa) {
-  acquire(&reflock);
-  if (refcount[(uint64)pa / PGSIZE] <= 1) { // 无需复制
-    release(&reflock);
-    return pa;
-  }
-  // 分配新内存页, 并将原页内容复制到新页
-  char* mem;
-  if ((mem = kalloc()) == 0) {
-    // 分配内存失败了
-    printf("kalloc failed\n");
-    release(&reflock);
-    return 0;
-  }
-  memmove(mem, (char*)pa, PGSIZE);
-  refcount[(uint64)pa / PGSIZE]--;
-  release(&reflock);
-  return (void*)mem;
-}
