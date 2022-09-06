@@ -304,11 +304,34 @@ sys_open(void)
       return -1;
     }
   } else {
-    if((ip = namei(path)) == 0){
+    if ((ip = namei(path)) == 0) {
       end_op();
       return -1;
     }
     ilock(ip);
+    // 递归处理符号链接的情况
+    int symlink_depth = 0;
+    while(ip->type == T_SYMLINK && (omode & O_NOFOLLOW) == 0) { // 递归太多次或者ip不存在就跳出
+      // 读取文件中的地址
+      if (readi(ip, 0, (uint64) path, 0, MAXPATH) < 0) {
+        iunlockput(ip);
+        end_op();
+        return -1;
+      }
+      iunlockput(ip);
+      // 递归太多次直接退出
+      if (++symlink_depth > 100) {
+        end_op();
+        return -1;
+      }
+      // 根据path更新inode并获得锁
+      if ((ip = namei(path)) == 0) {
+        end_op();
+        return -1;
+      }
+      ilock(ip);
+    }
+
     if(ip->type == T_DIR && omode != O_RDONLY){
       iunlockput(ip);
       end_op();
@@ -482,5 +505,31 @@ sys_pipe(void)
     fileclose(wf);
     return -1;
   }
+  return 0;
+}
+
+// 符号链接
+uint64 sys_symlink(void){
+  char target[MAXPATH], path[MAXPATH];
+  struct inode* ip;
+
+  if(argstr(0, target, MAXPATH) < 0 || argstr(1, path, MAXPATH) < 0){
+    return -1;
+  }
+
+  // 参考open创建inode
+  begin_op();
+  ip = create(path, T_SYMLINK, 0, 0); // 返回的
+  if (ip == 0){
+    end_op();
+    return -1;
+  }
+  // 向第一个直接映射的data block中写入target路径
+  if(writei(ip, 0, (uint64) target, 0, strlen(target)) <= 0) {
+    end_op();
+    return -1;
+  }
+  iunlockput(ip);
+  end_op();
   return 0;
 }
