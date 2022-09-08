@@ -5,6 +5,7 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "fcntl.h"
 
 struct cpu cpus[NCPU];
 
@@ -140,6 +141,9 @@ found:
   memset(&p->context, 0, sizeof(p->context));
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
+
+  // 将vma设置为0
+  memset(p->vmas, 0, sizeof(p->vmas));
 
   return p;
 }
@@ -313,6 +317,13 @@ fork(void)
 
   acquire(&np->lock);
   np->state = RUNNABLE;
+  // 复制vma
+  for (int i = 0; i < NVMA; i++) {
+    if(p->vmas[i].valid) {
+      memmove(&np->vmas[i], &p->vmas[i], sizeof(p->vmas[i]));
+      filedup(p->vmas[i].f);
+    }
+  }
   release(&np->lock);
 
   return pid;
@@ -352,6 +363,18 @@ exit(int status)
       p->ofile[fd] = 0;
     }
   }
+
+//  // 关闭所有vmas
+//  for (int i = 0; i < NVMA; i++) {
+//    if(p->vmas[i].valid) {
+//      // 检查是否需要写回
+//      if(p->vmas[i].flags & MAP_SHARED && p->vmas[i].prot & PROT_WRITE) {
+//        filewrite(p->vmas->f, p->vmas->addr, p->vmas->sz);
+//      }
+//      fileclose(p->vmas[i].f);
+//      p->vmas->valid = 0;
+//    }
+//  }
 
   begin_op();
   iput(p->cwd);

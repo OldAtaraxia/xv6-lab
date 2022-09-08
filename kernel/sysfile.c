@@ -15,6 +15,7 @@
 #include "sleeplock.h"
 #include "file.h"
 #include "fcntl.h"
+#include "memlayout.h"
 
 // Fetch the nth word-sized system call argument as a file descriptor
 // and return both the descriptor and the corresponding struct file.
@@ -480,6 +481,146 @@ sys_pipe(void)
     p->ofile[fd1] = 0;
     fileclose(rf);
     fileclose(wf);
+    return -1;
+  }
+  return 0;
+}
+
+uint64
+sys_mmap(void){
+  uint64 addr, sz;
+  int prot, flags, fd, offset;
+  struct file *f;
+  uint64 err = 0xffffffffffffffff;
+
+  // 获得参数
+  if (argaddr(0, &addr) < 0 || argaddr(1, &sz) < 0 || argint(2, &prot) < 0
+      || argint(3, &flags) < 0 || argfd(4, &fd, &f) < 0 || argint(5, &offset) < 0) {
+    return err;
+  }
+
+  sz = PGROUNDUP(sz); // mmap区域的大小需要是PGSIZE的整数倍
+
+  // 权限检查
+  if ((!f->readable && (prot & (PROT_READ))) ||
+      (!f->writable && (prot & PROT_WRITE) && !(flags & MAP_PRIVATE))) {
+    return err;
+  }
+
+  struct proc *p = myproc();
+
+  // 虚拟地址空间不足
+  if (p->sz + sz > MAXVA) return -1;
+
+  // 找到空闲vma
+  for (int i = 0; i < NVMA; i++) {
+    if (p->vmas[i].valid == 0) {
+      p->vmas[i].valid = 1;
+      p->vmas[i].sz = sz;
+      p->vmas[i].addr = p->sz; // 映射到最低地址的下部分
+      p->vmas[i].f = f;
+      p->vmas[i].prot = prot;
+      p->vmas[i].flags = flags;
+      p->vmas[i].offset = offset;
+      p->vmas[i].fd = fd;
+
+      // 更新mmapst位置
+      p->sz += sz;
+      // 增加文件的引用计数
+      filedup(f);
+      // 返回真实映射的虚拟地址
+      return p->vmas[i].addr;
+    }
+  }
+  return err;
+}
+
+uint64
+sys_munmap(void){
+  uint64 addr, sz;
+  if(argaddr(0, &addr) < 0 || argaddr(1, &sz) < 0) return -1;
+  addr = PGROUNDDOWN(addr);
+  sz = PGROUNDUP(sz);
+
+  struct proc *p = myproc();
+  struct vma *v = 0;
+  // 找到对应的vma
+  for (int i = 0; i < NVMA; i++) {
+    if (p->vmas[i].valid && p->vmas[i].addr <= addr && addr < p->vmas[i].addr + p->vmas[i].sz) {
+      v = &p->vmas[i];
+      break;
+    }
+  }
+  if (v == 0) return -1;
+
+
+  if (addr == v->addr) { // addr在起始处
+    v->addr += sz;
+    v->sz -= sz;
+  } else if (addr + sz == v->addr + v->sz) { // addr在结束处
+    v->sz -= sz;
+  } else {
+    return -1;
+  }
+
+  // 写回MAP_SHARED
+  if (v->flags & MAP_SHARED && v->prot & PROT_WRITE) {
+    filewrite(v->f, addr, sz);
+  }
+  // 解除映射关系
+  uvmunmap(p->pagetable, addr, sz / PGSIZE, 1);
+
+  // 全部映射都被取消的情况
+  if (v->sz == 0) {
+    fileclose(v->f);
+    v->valid = 0;
+  }
+
+  return 0;
+}
+
+
+int mmap_handler(uint64 va, uint cause){
+  struct proc *p = myproc();
+  struct vma *v = 0;
+  va = PGROUNDDOWN(va);
+  // 找到对应的vma
+  for (int i = 0; i < NVMA; i++) {
+    if (p->vmas[i].valid && p->vmas[i].addr <= va && va < p->vmas[i].addr + p->vmas[i].sz) {
+      v = &p->vmas[i];
+      break;
+    }
+  }
+  if (v == 0) return -1;
+
+  struct file *vf = v->f;
+  // 检查操作是否合法
+  if (cause == 13 && vf->readable == 0) return -1;
+  if (cause == 15 && vf->writable ==0) return -1;
+
+  // 开始分配页面
+  int pte_flags = PTE_U;
+  if (v->prot & PROT_READ) pte_flags |= PTE_R;
+  if (v->prot & PROT_WRITE) pte_flags |= PTE_W;
+  if (v->prot & PROT_EXEC) pte_flags |= PTE_X;
+
+  // 分配内存空间
+  void* pa = kalloc();
+  if (pa == 0) return -1;
+  memset(pa, 0, PGSIZE);
+
+  // 读取文件内容到pa
+  ilock(vf->ip);
+  uint64 offset = v->offset + va - v->addr; // va到文件起始的偏移量
+  if(readi(vf->ip, 0, (uint64)pa, offset, PGSIZE) == 0) {
+    iunlock(vf->ip);
+    kfree(pa);
+    return -1;
+  }
+  iunlock(vf->ip);
+
+  // 将pa->va映射关系写入pagetable
+  if(mappages(p->pagetable, va, PGSIZE, (uint64)pa, pte_flags) < 0) {
     return -1;
   }
   return 0;
